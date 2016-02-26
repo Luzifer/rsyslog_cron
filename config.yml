@@ -1,0 +1,6 @@
+---
+rsyslog_target: logs.myserver.com:12383
+jobs:
+  - name: date
+    schedule: "0 * * * * *"
+    cmd: "/bin/date"
