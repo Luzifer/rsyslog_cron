@@ -27,6 +27,7 @@ var (
 
 type cronConfig struct {
 	RSyslogTarget string    `yaml:"rsyslog_target"`
+	LogTemplate   string    `yaml:"log_template"`
 	Jobs          []cronJob `yaml:"jobs"`
 }
 
@@ -52,7 +53,9 @@ func main() {
 		log.Fatalf("Unable to read config file: %s")
 	}
 
-	cc := cronConfig{}
+	cc := cronConfig{
+		LogTemplate: `<{{ syslogpri .Severity }}>{{ .Date.Format "Jan 02 15:04:05" }} {{ .Hostname }} {{ .JobName }}: {{ .Message }}`,
+	}
 	if err := yaml.Unmarshal(body, &cc); err != nil {
 		log.Fatalf("Unable to parse config file: %s", err)
 	}
@@ -68,7 +71,7 @@ func main() {
 
 	c.Start()
 
-	logadapter, err := NewSyslogAdapter(cc.RSyslogTarget)
+	logadapter, err := NewSyslogAdapter(cc.RSyslogTarget, cc.LogTemplate)
 	if err != nil {
 		log.Fatalf("Unable to open syslog connection: %s", err)
 	}

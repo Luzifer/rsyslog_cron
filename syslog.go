@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"text/template"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -15,9 +16,10 @@ const (
 	tcpDialTimeout   = 5 * time.Second
 )
 
-func NewSyslogAdapter(address string) (*SyslogAdapter, error) {
+func NewSyslogAdapter(address, logFormat string) (*SyslogAdapter, error) {
 	return &SyslogAdapter{
-		address: address,
+		address:   address,
+		logFormat: logFormat,
 		dialer: &net.Dialer{
 			Timeout: tcpDialTimeout,
 		},
@@ -32,8 +34,32 @@ type message struct {
 }
 
 type SyslogAdapter struct {
-	address string
-	dialer  *net.Dialer
+	address   string
+	logFormat string
+	dialer    *net.Dialer
+}
+
+func (a *SyslogAdapter) formatMessage(m *message) (string, error) {
+	t, err := template.New("logFormat").Funcs(template.FuncMap{
+		"syslogpri": func(pri int) int { return 16*8 + pri },
+	}).Parse(a.logFormat)
+
+	if err != nil {
+		return "", err
+	}
+
+	buf := bytes.NewBufferString("")
+	if err := t.Execute(buf, map[string]interface{}{
+		"Date":     m.Date,
+		"JobName":  m.JobName,
+		"Hostname": cfg.Hostname,
+		"Message":  m.Message,
+		"Severity": m.Severity,
+	}); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 func (a *SyslogAdapter) Stream(logstream chan *message) {
@@ -49,13 +75,11 @@ func (a *SyslogAdapter) Stream(logstream chan *message) {
 		for msg := range logstream {
 			b.Reset()
 
-			fmt.Fprintf(b, "<%d>%s %s %s: %s\n",
-				16*8+msg.Severity,
-				msg.Date.Format("Jan 02 15:04:05"),
-				cfg.Hostname,
-				msg.JobName,
-				msg.Message,
-			)
+			msgLine, err := a.formatMessage(msg)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(b, msgLine)
 
 			if err := conn.SetDeadline(time.Now().Add(readWriteTimeout)); err != nil {
 				fmt.Printf("syslog: Unable to set deadline: %s\n", err)
