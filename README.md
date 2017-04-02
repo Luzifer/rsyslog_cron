@@ -19,6 +19,7 @@ This project is a quick and dirty replacement for running a cron daemon inside d
 ```yaml
 ---
 rsyslog_target: logs.myserver.com:12345
+log_format: '<{{ syslogpri .Severity }}>{{ .Date.Format "Jan 02 15:04:05" }} {{ .Hostname }} {{ .JobName }}: {{ .Message }}'
 jobs:
   - name: date
     schedule: "0 * * * * *"
@@ -27,9 +28,9 @@ jobs:
       - "+%+"
 ```
 
-The `rsyslog_target` parameter needs to be a rsyslog endpoint supporting TCP plain connections like Loggly or Papertrail does.
-
-The `schedule` parameter consists of 6 instead of the normal 5 fields:
+- `rsyslog_target` - needs to be a rsyslog endpoint supporting TCP plain connections like Loggly or Papertrail does.
+- `log_format` - format to use for generating the log line (above shown is default and does not need to be provided)
+- `schedule` - consists of 6 instead of the normal 5 fields:
 
 ```
 field         allowed values
