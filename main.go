@@ -50,7 +50,7 @@ func init() {
 func main() {
 	body, err := ioutil.ReadFile(cfg.ConfigFile)
 	if err != nil {
-		log.Fatalf("Unable to read config file: %s")
+		log.Fatalf("Unable to read config file: %s", err)
 	}
 
 	cc := cronConfig{
