@@ -1,3 +1,7 @@
+# 0.2.1 / 2017-04-02
+
+  * Fix go-vet error
+
 # 0.2.0 / 2017-04-02
 
   * Add building for Github releases
