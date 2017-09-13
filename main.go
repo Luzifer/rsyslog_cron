@@ -4,21 +4,23 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
-
 	"github.com/Luzifer/rconfig"
 	"github.com/robfig/cron"
+	"golang.org/x/net/context"
+	"gopkg.in/yaml.v2"
 )
 
 var (
 	cfg = struct {
-		ConfigFile string `flag:"config" default:"config.yaml" description:"Cron definition file"`
-		Hostname   string `flag:"hostname" description:"Overwrite system hostname"`
+		ConfigFile string        `flag:"config" default:"config.yaml" description:"Cron definition file"`
+		Hostname   string        `flag:"hostname" description:"Overwrite system hostname"`
+		PingTimout time.Duration `flag:"ping-timeout" default:"1s" description:"Timeout for success / failure pings"`
 	}{}
 	version = "dev"
 
@@ -32,10 +34,12 @@ type cronConfig struct {
 }
 
 type cronJob struct {
-	Name      string   `yaml:"name"`
-	Schedule  string   `yaml:"schedule"`
-	Command   string   `yaml:"cmd"`
-	Arguments []string `yaml:"args"`
+	Name        string   `yaml:"name"`
+	Schedule    string   `yaml:"schedule"`
+	Command     string   `yaml:"cmd"`
+	Arguments   []string `yaml:"args"`
+	PingSuccess string   `yaml:"ping_success"`
+	PingFailure string   `yaml:"ping_failure"`
 }
 
 func init() {
@@ -102,12 +106,54 @@ func getJobExecutor(job cronJob) func() {
 		switch err.(type) {
 		case nil:
 			fmt.Fprintln(stdout, "[SYS] Command execution successful")
+			go func(url string) {
+				if err := doPing(url); err != nil {
+					fmt.Fprintf(stderr, "[SYS] Ping to URL %q caused an error: %s", url, err)
+				}
+			}(job.PingSuccess)
+
 		case *exec.ExitError:
 			fmt.Fprintln(stderr, "[SYS] Command exited with unexpected exit code != 0")
+			go func(url string) {
+				if err := doPing(url); err != nil {
+					fmt.Fprintf(stderr, "[SYS] Ping to URL %q caused an error: %s", url, err)
+				}
+			}(job.PingFailure)
+
 		default:
 			fmt.Fprintf(stderr, "[SYS] Execution caused error: %s\n", err)
+			go func(url string) {
+				if err := doPing(url); err != nil {
+					fmt.Fprintf(stderr, "[SYS] Ping to URL %q caused an error: %s", url, err)
+				}
+			}(job.PingFailure)
+
 		}
 	}
+}
+
+func doPing(url string) error {
+	if url == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.PingTimout)
+	defer cancel()
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode > 299 {
+		return fmt.Errorf("Expected HTTP2xx status, got HTTP%d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 type messageChanWriter struct {
